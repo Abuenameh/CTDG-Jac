@@ -421,9 +421,9 @@ void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, vector<double>& 
     Integrator integrator_rk("integrator", "rk", ode_func, make_dict("t0", 0, "tf", 2 * tau, "number_of_finite_elements", ceil((2 * tau) / dt)));
     Integrator integrator_cvodes("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", 2 * tau, "exact_jacobian", false, "max_num_steps", 100000));
     Integrator integrator_rk1("integrator", "rk", ode_func, make_dict("t0", 0, "tf", tau, "number_of_finite_elements", ceil((tau) / dt)));
-    Integrator integrator_cvodes1("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", tau, "exact_jacobian", false, "max_num_steps", 100000));
+    Integrator integrator_cvodes1("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", tau, "exact_jacobian", /*false*/true, "max_num_steps", 100000));
     Integrator integrator_rk2("integrator", "rk", ode_func, make_dict("t0", tau, "tf", 2 * tau, "number_of_finite_elements", ceil((tau) / dt)));
-    Integrator integrator_cvodes2("integrator", "cvodes", ode_func, make_dict("t0", tau, "tf", 2 * tau, "exact_jacobian", false, "max_num_steps", 100000));
+    Integrator integrator_cvodes2("integrator", "cvodes", ode_func, make_dict("t0", tau, "tf", 2 * tau, "exact_jacobian", /*false*/true, "max_num_steps", 100000));
     Integrator integrator;
     Integrator integrator1;
     Integrator integrator2;
@@ -516,6 +516,54 @@ void fail(std::string error, worker_output* output, managed_shared_memory& segme
     output->runtime = error.c_str();
 }
 
+SXFunction get_ode() {
+
+    SX p = SX::sym("p", L + 4);
+    SX Wi = p[L];
+    SX Wf = p[L + 1];
+    SX mu = p[L + 2];
+    SX tau = p[L + 3];
+
+    SX f = SX::sym("f", 2 * L * dim);
+    SX dU = SX::sym("dU", L);
+    SX J = SX::sym("J", L);
+    SX U0 = SX::sym("U0");
+    SX t = SX::sym("t");
+
+    SX Wt = if_else(t < tau, Wi + (Wf - Wi) * t / (tau), Wf + (Wi - Wf) * (t - tau) / (tau));
+
+    U0 = UW(Wt);
+    for (int i = 0; i < L; i++) {
+        J[i] = JWij(Wt * p[i], Wt * p[mod(i + 1)]);
+        dU[i] = UW(Wt * p[i]) - U0;
+    }
+
+    complex<SX> E = energy(f, J, U0, dU, mu);
+
+    complex<SX> S = canonical(f, J, U0, dU, mu);
+    SXFunction St("St",{t},
+    {
+        S.real(), S.imag()
+    });
+    complex<SX> Sdt = complex<SX>(St.gradient(0, 0)(vector<SX>{t})[0], St.gradient(0, 1)(vector<SX>{t})[0]);
+
+    complex<SX> HS = Sdt - complex<SX>(0, 1) * E;
+    SXFunction HSf("HS",{f},
+    {
+        HS.real(), HS.imag()
+    });
+    complex<SX> HSdf = complex<SX>(HSf.gradient(0, 0)(vector<SX>{f})[0], HSf.gradient(0, 1)(vector<SX>{f})[0]);
+    SX ode = SX::sym("ode", 2 * L * dim);
+    for (int j = 0; j < L * dim; j++) {
+        ode[2 * j] = 0.5 * (HSdf.real().elem(2 * j) - HSdf.imag().elem(2 * j + 1));
+        ode[2 * j + 1] = 0.5 * (HSdf.real().elem(2 * j + 1) + HSdf.imag().elem(2 * j));
+    }
+
+    SXFunction ode_func = SXFunction("ode", daeIn("t", t, "x", f, "p", p), daeOut("ode", ode));
+
+    return ode_func;
+}
+
 void worker(worker_input* input, worker_tau* tau_in, worker_output* output, managed_shared_memory& segment) {//std::string tau_name, std::string output_name, managed_shared_memory& segment) {
 
     double Wi = input->Wi;
@@ -557,69 +605,24 @@ void worker(worker_input* input, worker_tau* tau_in, worker_output* output, mana
     });
     SXFunction E0 = SXFunction("E0",{f}, Ef(vector<SX>{f, 0, 1}));
 
-    /////////////////////////////
-    //    SX S = canonical(f, J, U0, dU, mu/scale);
-    //    SXFunction St("St",{t},
-    //    {
-    //        S
-    //    });
-    //    SX Sdt = St.gradient()(vector<SX>{t})[0];
-    //
-    //
-    //    SXFunction HSr("HSr",{f},
-    //    {
-    //        Sdt
-    //    });
-    //    SX HSrdf = HSr.gradient()(vector<SX>{f})[0];
-    //    SXFunction HSi("HSi",{f},
-    //    {
-    //        -E
-    //    });
-    //    SX HSidf = HSi.gradient()(vector<SX>{f})[0];
-    //
-    //    SX ode = SX::sym("ode", 2 * L * dim);
-    //    for (int j = 0; j < L * dim; j++) {
-    //        ode[2 * j] = 0;
-    //        ode[2 * j + 1] = 0;
-    //        try {
-    //            ode[2 * j] += 0.5 * HSrdf[2 * j];
-    //        }
-    //        catch (CasadiException& e) {
-    //        }
-    //        try {
-    //            ode[2 * j] -= 0.5 * HSidf[2 * j + 1];
-    //        }
-    //        catch (CasadiException& e) {
-    //        }
-    //        try {
-    //            ode[2 * j + 1] += 0.5 * HSidf[2 * j];
-    //        }
-    //        catch (CasadiException& e) {
-    //        }
-    //        try {
-    //            ode[2 * j + 1] += 0.5 * HSrdf[2 * j + 1];
-    //        }
-    //        catch (CasadiException& e) {
-    //        }
-    //    }
-    //    SXFunction ode_func = SXFunction("ode", daeIn("t", t, "x", f, "p", psx), daeOut("ode", ode));
-
     //    ExternalFunction ode_func("ode");
 
-    chdir("odes");
-    vector<Function> odes;
-    odes.push_back(ExternalFunction("odes"));
-    for (int ei = 0; ei < 7; ei++) {
-        for (int i = 0; i < L; i++) {
-            for (int n = 0; n <= nmax; n++) {
-                string funcname = "ode_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
-                odes.push_back(ExternalFunction(funcname));
-            }
-        }
-    }
-    SumFunction sf(odes);
-    Function ode_func = sf.create();
-    chdir("..");
+//    chdir("odes");
+//    vector<Function> odes;
+//    odes.push_back(ExternalFunction("odes"));
+//    for (int ei = 0; ei < 7; ei++) {
+//        for (int i = 0; i < L; i++) {
+//            for (int n = 0; n <= nmax; n++) {
+//                string funcname = "ode_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
+//                odes.push_back(ExternalFunction(funcname));
+//            }
+//        }
+//    }
+//    SumFunction sf(odes);
+//    Function ode_func = sf.create();
+//    chdir("..");
+    
+    SXFunction ode_func = get_ode();
 
     double taui;
     for (;;) {
@@ -788,6 +791,14 @@ void build_odes() {
  */
 int main(int argc, char** argv) {
 
+    Function ode_func = get_ode();
+    CodeGenerator gen;
+    gen.add(ode_func);
+    Function jac = ode_func.fullJacobian();
+//    gen.add(ode_func.fullJacobian());
+//    gen.generate("ode");
+    return 0;
+    
 //    build_odes();
 //    return 0;
 
