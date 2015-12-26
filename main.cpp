@@ -739,6 +739,8 @@ void build_odes() {
         energyfunc energy = energyfuncs[ei];
         for (int i = 0; i < L; i++) {
             for (int n = 0; n <= nmax; n++) {
+                string funcname = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
+
                 complex<SX> E = energy(i, n, f, J, U0, dU, mu);
 
                 complex<SX> HS = -complex<SX>(0, 1) * E;
@@ -752,10 +754,13 @@ void build_odes() {
                     ode[2 * j] = 0.5 * (HSdf.real().elem(2 * j) - HSdf.imag().elem(2 * j + 1));
                     ode[2 * j + 1] = 0.5 * (HSdf.real().elem(2 * j + 1) + HSdf.imag().elem(2 * j));
                 }
-                SXFunction ode_func = SXFunction("ode", daeIn("t", t, "x", f, "p", p), daeOut("ode", ode));
-
-                string funcname = "ode_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
-                ode_func.generate(funcname);
+                SXFunction ode_func = SXFunction(func_name, daeIn("t", t, "x", f, "p", p), daeOut("ode", ode));
+//                ode_func.generate(funcname);
+                
+                CodeGenerator gen;
+                gen.add(ode_func);
+                gen.add(ode_func.fullJacobian());
+                gen.generate(funcname);
             }
         }
     }
@@ -779,9 +784,13 @@ void build_odes() {
         ode[2 * j] = 0.5 * (HSdf.real().elem(2 * j) - HSdf.imag().elem(2 * j + 1));
         ode[2 * j + 1] = 0.5 * (HSdf.real().elem(2 * j + 1) + HSdf.imag().elem(2 * j));
     }
-    SXFunction ode_func = SXFunction("ode", daeIn("t", t, "x", f, "p", p), daeOut("ode", ode));
-
-    ode_func.generate("odes");
+    SXFunction ode_func = SXFunction("ode_S", daeIn("t", t, "x", f, "p", p), daeOut("ode", ode));
+//    ode_func.generate("odes");
+    
+    CodeGenerator gen;
+    gen.add(ode_func);
+    gen.add(ode_func.fullJacobian());
+    gen.generate("ode_S");
 
     chdir("..");
 }
@@ -791,16 +800,16 @@ void build_odes() {
  */
 int main(int argc, char** argv) {
 
-    Function ode_func = get_ode();
-    CodeGenerator gen;
-    gen.add(ode_func);
-    Function jac = ode_func.fullJacobian();
+//    Function ode_func = get_ode();
+//    CodeGenerator gen;
+//    gen.add(ode_func);
+//    Function jac = ode_func.fullJacobian();
 //    gen.add(ode_func.fullJacobian());
 //    gen.generate("ode");
-    return 0;
-    
-//    build_odes();
 //    return 0;
+    
+    build_odes();
+    return 0;
 
     //    build_odes();
     //    return 0;
