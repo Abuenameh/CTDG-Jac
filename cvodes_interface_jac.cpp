@@ -4,7 +4,7 @@
  * and open the template in the editor.
  */
 
-#include <casadi/interfaces/sundials/cvodes_interface.hpp>
+#include "cvodes_interface_jac.hpp"
 
 #include <casadi/core/std_vector_tools.hpp>
 #include <casadi/core/function/linear_solver_internal.hpp>
