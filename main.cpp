@@ -739,7 +739,7 @@ void build_odes() {
         energyfunc energy = energyfuncs[ei];
         for (int i = 0; i < L; i++) {
             for (int n = 0; n <= nmax; n++) {
-                string funcname = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
+                string func_name = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
 
                 complex<SX> E = energy(i, n, f, J, U0, dU, mu);
 
@@ -760,7 +760,7 @@ void build_odes() {
                 CodeGenerator gen;
                 gen.add(ode_func);
                 gen.add(ode_func.fullJacobian());
-                gen.generate(funcname);
+                gen.generate(func_name);
             }
         }
     }
