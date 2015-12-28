@@ -795,10 +795,35 @@ void build_odes() {
     chdir("..");
 }
 
+#include "ode.hpp"
+#include "jac.hpp"
+
 /*
  * 
  */
 int main(int argc, char** argv) {
+    
+    vector<double> fin(2*L*dim, 0.25);
+    vector<double> Jf({1.0227310362932056e7,1.024675659410313e7,1.0353495227480633e7,1.0297352485677032e7,
+   1.0262727637339968e7});
+   vector<double> dUf({-662648.4069630802,6.324989883779682e6,-2.614157014239885e6,-4.138882871558778e6,
+   2.9101352455864474e6});
+   double U0f = 3.7949063923089914e7;
+   double muf = 1.8974531961544957e7;
+   vector<double> Jpf({-9.5757307865558e13,-9.350483272606312e13,-8.11329513149425e13,
+   -8.767128019117625e13,-9.170625884987675e13});
+   double U0pf = 4.40274854172645e15;
+   vector<vector<double>> jacf(2*L*dim, vector<double>(2*L*dim, 0));
+   for (int i = 0; i < 1*L*dim; i++) {
+//           cout << ode(i, fin, Jf, Jpf, U0f, U0pf, dUf, muf) << endl;
+           jacobian(jacf[i], i, fin, Jf, U0f, dUf, muf);
+           for (int j = 0; j < 2*L*dim; j++) {
+               if (jacf[i][j] != 0) {
+                   cout << "(" << i+1 << "," << j+1 << ") -> " << jacf[i][j] << endl;
+               }
+           }
+   }
+    return 0;
 
 //    Function ode_func = get_ode();
 //    CodeGenerator gen;

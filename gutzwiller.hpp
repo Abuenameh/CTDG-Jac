@@ -14,7 +14,7 @@
 
 using namespace std;
 
-const int L = 25;
+const int L = 5;
 const int nmax = 7;
 const int dim = nmax + 1;
 
@@ -74,6 +74,18 @@ inline double eps(double U, int n, int m) {
 
 inline SX eps(SX& U, int i, int j, int a) {
     return a*U;
+}
+
+inline double gd(int n, int m) {
+    return sqrt(1.0*(n + 1) * m);
+}
+
+inline double epsd(vector<double>& U, int i, int j, int n, int m) {
+	return n * U[i] - (m - 1) * U[j];
+}
+
+inline double epsd(double U, int n, int m) {
+    return (n - m + 1) * U;
 }
 
 
