@@ -297,6 +297,8 @@ public:
         inSparsity.push_back(Sparsity::dense(0, 0));
         inSparsity.push_back(Sparsity::dense(L + 4));
         inSparsity.push_back(Sparsity::dense(1));
+        inSparsity.push_back(Sparsity::dense(1));
+        inSparsity.push_back(Sparsity::dense(1));
         
         outSparsity.push_back(Sparsity::dense(2 * L * dim, 2 * L * dim));
         outSparsity.push_back(Sparsity::dense(0, 0));
@@ -304,7 +306,7 @@ public:
     }
 
     int nIn() {
-        return DAE_NUM_IN;
+        return DAE_NUM_IN + 2;
     }
 
     int nOut() {
@@ -348,10 +350,10 @@ public:
         dU[i] = UW(Wt * p[i]) - U0;
     }
     
-    vector<vector<<double>> jac(2 * L * dim/*, vector<double>(2 * L * dim)*/);
+    vector<vector<double>> jac(2 * L * dim/*, vector<double>(2 * L * dim)*/);
     for (int i = 0; i < 2 * L * dim; i++) {
         vector<double> jaci(2 * L * dim);
-        jac(jaci, i, fin, J, Jp, U0, U0p, dU, mu);
+        jacobian(jaci, i, fin, J, Jp, U0, U0p, dU, mu);
         jac[i] = jaci;
     }
         
@@ -562,17 +564,20 @@ complex<double> dot(complex_vector& v, complex_vector& w) {
     return res;
 }
 
-void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, vector<double>& p, worker_input* input, worker_output* output, managed_shared_memory& segment) {
+void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, Function& jac_func, vector<double>& p, worker_input* input, worker_output* output, managed_shared_memory& segment) {
     double tau = p[L + 3];
     //    double tauf = tau;//2e-6;
     //    double dt = 0.9e-9*scale;
     double dt = input->dt;
     Integrator integrator_rk("integrator", "rk", ode_func, make_dict("t0", 0, "tf", 2 * tau, "number_of_finite_elements", ceil((2 * tau) / dt)));
     Integrator integrator_cvodes("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", 2 * tau, "exact_jacobian", false, "max_num_steps", 100000));
+    Integrator integrator_cvodesjac("integrator", "cvodesjac", ode_func, make_dict("t0", 0, "tf", 2 * tau, "exact_jacobian", true, "full_jacobian", jac_func, "max_num_steps", 100000));
     Integrator integrator_rk1("integrator", "rk", ode_func, make_dict("t0", 0, "tf", tau, "number_of_finite_elements", ceil((tau) / dt)));
-    Integrator integrator_cvodes1("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", tau, "exact_jacobian", /*false*/true, "max_num_steps", 100000));
+    Integrator integrator_cvodes1("integrator", "cvodes", ode_func, make_dict("t0", 0, "tf", tau, "exact_jacobian", false, "max_num_steps", 100000));
+    Integrator integrator_cvodesjac1("integrator", "cvodesjac", ode_func, make_dict("t0", 0, "tf", tau, "exact_jacobian", /*false*/true, "full_jacobian", jac_func, "max_num_steps", 100000));
     Integrator integrator_rk2("integrator", "rk", ode_func, make_dict("t0", tau, "tf", 2 * tau, "number_of_finite_elements", ceil((tau) / dt)));
-    Integrator integrator_cvodes2("integrator", "cvodes", ode_func, make_dict("t0", tau, "tf", 2 * tau, "exact_jacobian", /*false*/true, "max_num_steps", 100000));
+    Integrator integrator_cvodes2("integrator", "cvodes", ode_func, make_dict("t0", tau, "tf", 2 * tau, "exact_jacobian", false, "max_num_steps", 100000));
+    Integrator integrator_cvodesjac2("integrator", "cvodesjac", ode_func, make_dict("t0", tau, "tf", 2 * tau, "exact_jacobian", /*false*/true, "full_jacobian", jac_func, "max_num_steps", 100000));
     Integrator integrator;
     Integrator integrator1;
     Integrator integrator2;
@@ -586,7 +591,11 @@ void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, vector<double>& 
         integrator1 = integrator_cvodes1;
         integrator2 = integrator_cvodes2;
     }
-
+    if (input->integrator == "cvodesjac") {
+        integrator = integrator_cvodesjac;
+        integrator1 = integrator_cvodesjac1;
+        integrator2 = integrator_cvodesjac2;
+    }
     ptime start_time = microsec_clock::local_time();
 
     std::vector<double> x0;
@@ -758,20 +767,26 @@ void worker(worker_input* input, worker_tau* tau_in, worker_output* output, mana
 
 //    chdir("odes");
 //    vector<Function> odes;
-//    odes.push_back(ExternalFunction("odes"));
+//    odes.push_back(ExternalFunction("ode_S"));
 //    for (int ei = 0; ei < 7; ei++) {
 //        for (int i = 0; i < L; i++) {
 //            for (int n = 0; n <= nmax; n++) {
-//                string funcname = "ode_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
+//                string funcname = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
 //                odes.push_back(ExternalFunction(funcname));
 //            }
 //        }
 //    }
 //    SumFunction sf(odes);
 //    Function ode_func = sf.create();
+//    Function jac_func;
 //    chdir("..");
     
-    SXFunction ode_func = get_ode();
+//    SXFunction ode_func = get_ode();
+    
+    ODEFunction odef;
+    Function ode_func = odef.create();
+    JacFunction jacf;
+    Function jac_func = jacf.create();
 
     double taui;
     for (;;) {
@@ -790,7 +805,7 @@ void worker(worker_input* input, worker_tau* tau_in, worker_output* output, mana
 
         p[L + 3] = taui;
         try {
-            evolve(E0, Ef, ode_func, p, input, output, segment);
+            evolve(E0, Ef, ode_func, jac_func, p, input, output, segment);
         }
         catch (std::exception& e) {
             fail(e.what(), output, segment);
@@ -908,7 +923,7 @@ void build_odes() {
                 
                 CodeGenerator gen;
                 gen.add(ode_func);
-                gen.add(ode_func.fullJacobian());
+//                gen.add(ode_func.fullJacobian());
                 gen.generate(func_name);
             }
         }
@@ -938,7 +953,7 @@ void build_odes() {
     
     CodeGenerator gen;
     gen.add(ode_func);
-    gen.add(ode_func.fullJacobian());
+//    gen.add(ode_func.fullJacobian());
     gen.generate("ode_S");
 
     chdir("..");
@@ -949,35 +964,39 @@ void build_odes() {
  */
 int main(int argc, char** argv) {
     
-    vector<double> fin(2*L*dim, 0.25);
-    vector<double> p({1.01015958087519, 0.914144976064563, 1.04162956443615, 1.0679898084607, 0.958180948719382, 3e11, 1e11, 1.8974531961544957e7, 1e-8});
-    vector<DMatrix> arg({fin, DMatrix(), p, DMatrix()});
-
-    ODEFunction odef;
-    Function odefun = odef.create();
-    cout << odefun(arg) << endl;
-    return 0;
-    
-    vector<double> Jf({1.0227310362932056e7,1.024675659410313e7,1.0353495227480633e7,1.0297352485677032e7,
-   1.0262727637339968e7});
-   vector<double> dUf({-662648.4069630802,6.324989883779682e6,-2.614157014239885e6,-4.138882871558778e6,
-   2.9101352455864474e6});
-   double U0f = 3.7949063923089914e7;
-   double muf = 1.8974531961544957e7;
-   vector<double> Jpf({-9.5757307865558e13,-9.350483272606312e13,-8.11329513149425e13,
-   -8.767128019117625e13,-9.170625884987675e13});
-   double U0pf = 4.40274854172645e15;
-   vector<vector<double>> jacf(2*L*dim, vector<double>(2*L*dim, 0));
-   for (int i = 0; i < 2*L*dim; i++) {
-//           cout << ode(i, fin, Jf, Jpf, U0f, U0pf, dUf, muf) << endl;
-           jacobian(jacf[i], i, fin, Jf, Jpf, U0f, U0pf, dUf, muf);
-           for (int j = 0; j < 2*L*dim; j++) {
-               if (jacf[i][j] != 0) {
-                   cout << "(" << i+1 << "," << j+1 << ") -> " << jacf[i][j] << endl;
-               }
-           }
-   }
-    return 0;
+//    vector<double> fin(2*L*dim, 0.25);
+//    vector<double> p({1.01015958087519, 0.914144976064563, 1.04162956443615, 1.0679898084607, 0.958180948719382, 3e11, 1e11, 1.8974531961544957e7, 1e-8});
+//    vector<DMatrix> arg({fin, DMatrix(), p, DMatrix()});
+//
+//    ODEFunction odef;
+//    Function odefun = odef.create();
+////    cout << odefun(arg) << endl;
+//    
+//    JacFunction jacfn;
+//    Function jacfun = jacfn.create();
+////    cout << jacfun(arg) << endl;
+//    return 0;
+//    
+//    vector<double> Jf({1.0227310362932056e7,1.024675659410313e7,1.0353495227480633e7,1.0297352485677032e7,
+//   1.0262727637339968e7});
+//   vector<double> dUf({-662648.4069630802,6.324989883779682e6,-2.614157014239885e6,-4.138882871558778e6,
+//   2.9101352455864474e6});
+//   double U0f = 3.7949063923089914e7;
+//   double muf = 1.8974531961544957e7;
+//   vector<double> Jpf({-9.5757307865558e13,-9.350483272606312e13,-8.11329513149425e13,
+//   -8.767128019117625e13,-9.170625884987675e13});
+//   double U0pf = 4.40274854172645e15;
+//   vector<vector<double>> jacf(2*L*dim, vector<double>(2*L*dim, 0));
+//   for (int i = 0; i < 2*L*dim; i++) {
+////           cout << ode(i, fin, Jf, Jpf, U0f, U0pf, dUf, muf) << endl;
+//           jacobian(jacf[i], i, fin, Jf, Jpf, U0f, U0pf, dUf, muf);
+//           for (int j = 0; j < 2*L*dim; j++) {
+//               if (jacf[i][j] != 0) {
+//                   cout << "(" << i+1 << "," << j+1 << ") -> " << jacf[i][j] << endl;
+//               }
+//           }
+//   }
+//    return 0;
 
 //    Function ode_func = get_ode();
 //    CodeGenerator gen;
@@ -987,11 +1006,11 @@ int main(int argc, char** argv) {
 //    gen.generate("ode");
 //    return 0;
     
-    build_odes();
-    return 0;
+//    build_odes();
+//    return 0;
 
-    //    build_odes();
-    //    return 0;
+//        build_odes();
+//        return 0;
 
     ptime begin = microsec_clock::local_time();
 
@@ -1021,6 +1040,7 @@ int main(int argc, char** argv) {
 
         //        int integrator = lexical_cast<int>(argv[11]);
         std::string intg = argv[11];
+        
         double dt = lexical_cast<double>(argv[12]);
 
 #ifdef AMAZON
