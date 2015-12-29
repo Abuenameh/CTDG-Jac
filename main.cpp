@@ -53,6 +53,9 @@ using namespace nlopt;
 #include "mathematica.hpp"
 #include "casadimath.hpp"
 #include "orderparameter.hpp"
+#include "ode.hpp"
+#include "jac.hpp"
+
 
 #include <casadi/interfaces/sundials/cvodes_interface.hpp>
 
@@ -226,16 +229,6 @@ public:
         outSparsity.push_back(Sparsity::dense(2 * L * dim));
         outSparsity.push_back(Sparsity::dense(0, 0));
         outSparsity.push_back(Sparsity::dense(0, 0));
-        
-        nf = fs.size();
-        nin = fs[0].nIn();
-        nout = fs[0].nOut();
-        for (int i = 0; i < nin; i++) {
-            inSparsity.push_back(fs[0].inputSparsity(i));
-        }
-        for (int i = 0; i < nout; i++) {
-            outSparsity.push_back(fs[0].outputSparsity(i));
-        }
     }
 
     int nIn() {
@@ -255,9 +248,9 @@ public:
     }
 
     std::vector<DMatrix> operator()(const std::vector<DMatrix>& arg) {
-        vector<double> fin = arg[0];
-        vector<double> p = arg[2];
-        double t = arg[3][0];
+        vector<double> fin = arg[0].nonzeros();
+        vector<double> p = arg[2].nonzeros();
+        double t = arg[3].toScalar();
         
         double Wi = p[L];
         double Wf = p[L + 1];
@@ -283,12 +276,12 @@ public:
         dU[i] = UW(Wt * p[i]) - U0;
     }
     
-    double res = 0;
+    vector<double> odes(2 * L * dim);
     for (int i = 0; i < 2 * L * dim; i++) {
-        res += ode(i, fin, J, Jp, U0, U0p, dU, mu);
+        odes[i] = ode(i, fin, J, Jp, U0, U0p, dU, mu);
     }
         
-        return res;
+        return vector<DMatrix>{DMatrix(odes), DMatrix(), DMatrix()};
     }
 
 private:
@@ -877,15 +870,20 @@ void build_odes() {
     chdir("..");
 }
 
-#include "ode.hpp"
-#include "jac.hpp"
-
 /*
  * 
  */
 int main(int argc, char** argv) {
     
     vector<double> fin(2*L*dim, 0.25);
+    vector<double> p({1.01015958087519, 0.914144976064563, 1.04162956443615, 1.0679898084607, 0.958180948719382, 3e11, 1e11, 1.8974531961544957e7, 1e-8});
+    vector<DMatrix> arg({fin, DMatrix(), p, DMatrix()});
+
+    ODEFunction odef;
+    Function odefun = odef.create();
+    cout << odefun(arg) << endl;
+    return 0;
+    
     vector<double> Jf({1.0227310362932056e7,1.024675659410313e7,1.0353495227480633e7,1.0297352485677032e7,
    1.0262727637339968e7});
    vector<double> dUf({-662648.4069630802,6.324989883779682e6,-2.614157014239885e6,-4.138882871558778e6,
