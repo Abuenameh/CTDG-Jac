@@ -214,6 +214,88 @@ private:
     vector<Sparsity> outSparsity;
 };
 
+class ODEFunction : public Callback2 {
+public:
+    
+    ODEFunction() {
+        inSparsity.push_back(Sparsity::dense(2 * L * dim));
+        inSparsity.push_back(Sparsity::dense(0, 0));
+        inSparsity.push_back(Sparsity::dense(L + 4));
+        inSparsity.push_back(Sparsity::dense(1));
+        
+        outSparsity.push_back(Sparsity::dense(2 * L * dim));
+        outSparsity.push_back(Sparsity::dense(0, 0));
+        outSparsity.push_back(Sparsity::dense(0, 0));
+        
+        nf = fs.size();
+        nin = fs[0].nIn();
+        nout = fs[0].nOut();
+        for (int i = 0; i < nin; i++) {
+            inSparsity.push_back(fs[0].inputSparsity(i));
+        }
+        for (int i = 0; i < nout; i++) {
+            outSparsity.push_back(fs[0].outputSparsity(i));
+        }
+    }
+
+    int nIn() {
+        return DAE_NUM_IN;
+    }
+
+    int nOut() {
+        return DAE_NUM_OUT;
+    }
+
+    Sparsity inputSparsity(int i) {
+        return inSparsity[i];
+    }
+
+    Sparsity outputSparsity(int i) {
+        return outSparsity[i];
+    }
+
+    std::vector<DMatrix> operator()(const std::vector<DMatrix>& arg) {
+        vector<double> fin = arg[0];
+        vector<double> p = arg[2];
+        double t = arg[3][0];
+        
+        double Wi = p[L];
+        double Wf = p[L + 1];
+        double mu = p[L + 2];
+        double tau = p[L + 3];
+        
+        double Wt, Wtp;
+        if (t < tau) {
+            Wt = Wi + (Wf - Wi) * t / tau;
+            Wtp = (Wf - Wi) / tau;
+        }
+        else {
+            Wt = Wf + (Wi - Wf) * (t - tau) / tau;
+            Wtp = (Wi - Wf) / tau;
+        }
+        
+        vector<double> J(L), Jp(L), dU(L);
+    double U0 = UW(Wt);
+    double U0p = UWp(Wt, Wtp);
+    for (int i = 0; i < L; i++) {
+        J[i] = JWij(Wt * p[i], Wt * p[mod(i + 1)]);
+        Jp[i] = JWijp(Wt * p[i], Wt * p[mod(i + 1)], Wtp * p[i], Wtp * p[mod(i + 1)]);
+        dU[i] = UW(Wt * p[i]) - U0;
+    }
+    
+    double res = 0;
+    for (int i = 0; i < 2 * L * dim; i++) {
+        res += ode(i, fin, J, Jp, U0, U0p, dU, mu);
+    }
+        
+        return res;
+    }
+
+private:
+    vector<Sparsity> inSparsity;
+    vector<Sparsity> outSparsity;
+};
+
 boost::mutex progress_mutex;
 boost::mutex inputs_mutex;
 boost::mutex problem_mutex;
@@ -814,9 +896,9 @@ int main(int argc, char** argv) {
    -8.767128019117625e13,-9.170625884987675e13});
    double U0pf = 4.40274854172645e15;
    vector<vector<double>> jacf(2*L*dim, vector<double>(2*L*dim, 0));
-   for (int i = 0; i < 1*L*dim; i++) {
+   for (int i = 0; i < 2*L*dim; i++) {
 //           cout << ode(i, fin, Jf, Jpf, U0f, U0pf, dUf, muf) << endl;
-           jacobian(jacf[i], i, fin, Jf, U0f, dUf, muf);
+           jacobian(jacf[i], i, fin, Jf, Jpf, U0f, U0pf, dUf, muf);
            for (int j = 0; j < 2*L*dim; j++) {
                if (jacf[i][j] != 0) {
                    cout << "(" << i+1 << "," << j+1 << ") -> " << jacf[i][j] << endl;

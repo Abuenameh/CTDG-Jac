@@ -41,8 +41,20 @@ inline double JWij(double Wi, double Wj) {
     return alpha * (Wi * Wj) / (sqrt(Ng * Ng + Wi * Wi) * sqrt(Ng * Ng + Wj * Wj));
 }
 
+inline double JWijp(double Wi, double Wj, double Wip, double Wjp) {
+    return - (alpha * Wi * Wi * Wj * Wip) / (pow(Ng * Ng + Wi * Wi, 1.5) * sqrt(Ng * Ng + Wj * Wj))\
+            + (alpha * Wj * Wip) / (sqrt((Ng * Ng + Wi * Wi) * (Ng * Ng + Wj * Wj)))\
+            - (alpha * Wi * Wj * Wj * Wjp) / (sqrt(Ng * Ng + Wi * Wi) * pow(Ng * Ng + Wj * Wj, 1.5))\
+            + (alpha * Wi * Wjp) / (sqrt((Ng * Ng + Wi * Wi) * (Ng * Ng + Wj * Wj)));
+}
+
 inline double UW(double W) {
     return -2 * (g24 * g24) / Delta * (Ng * Ng * W * W) / ((Ng * Ng + W * W) * (Ng * Ng + W * W));
+}
+
+inline double UWp(double W, double Wp) {
+    return ((8 * g24 * g24 * Ng * Ng * W * W * W * Wp) / (Delta * (Ng * Ng + W * W) * (Ng * Ng + W * W) * (Ng * Ng + W * W)))\
+            - ((4 * g24 * g24 * Ng * Ng * W * Wp) / (Delta * (Ng * Ng + W * W) * (Ng * Ng + W * W)));
 }
 
 inline SX JW(SX W) {
