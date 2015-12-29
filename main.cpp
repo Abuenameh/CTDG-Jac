@@ -289,6 +289,80 @@ private:
     vector<Sparsity> outSparsity;
 };
 
+class JacFunction : public Callback2 {
+public:
+    
+    JacFunction() {
+        inSparsity.push_back(Sparsity::dense(2 * L * dim));
+        inSparsity.push_back(Sparsity::dense(0, 0));
+        inSparsity.push_back(Sparsity::dense(L + 4));
+        inSparsity.push_back(Sparsity::dense(1));
+        
+        outSparsity.push_back(Sparsity::dense(2 * L * dim, 2 * L * dim));
+        outSparsity.push_back(Sparsity::dense(0, 0));
+        outSparsity.push_back(Sparsity::dense(0, 0));
+    }
+
+    int nIn() {
+        return DAE_NUM_IN;
+    }
+
+    int nOut() {
+        return DAE_NUM_OUT;
+    }
+
+    Sparsity inputSparsity(int i) {
+        return inSparsity[i];
+    }
+
+    Sparsity outputSparsity(int i) {
+        return outSparsity[i];
+    }
+
+    std::vector<DMatrix> operator()(const std::vector<DMatrix>& arg) {
+        vector<double> fin = arg[0].nonzeros();
+        vector<double> p = arg[2].nonzeros();
+        double t = arg[3].toScalar();
+        
+        double Wi = p[L];
+        double Wf = p[L + 1];
+        double mu = p[L + 2];
+        double tau = p[L + 3];
+        
+        double Wt, Wtp;
+        if (t < tau) {
+            Wt = Wi + (Wf - Wi) * t / tau;
+            Wtp = (Wf - Wi) / tau;
+        }
+        else {
+            Wt = Wf + (Wi - Wf) * (t - tau) / tau;
+            Wtp = (Wi - Wf) / tau;
+        }
+        
+        vector<double> J(L), Jp(L), dU(L);
+    double U0 = UW(Wt);
+    double U0p = UWp(Wt, Wtp);
+    for (int i = 0; i < L; i++) {
+        J[i] = JWij(Wt * p[i], Wt * p[mod(i + 1)]);
+        Jp[i] = JWijp(Wt * p[i], Wt * p[mod(i + 1)], Wtp * p[i], Wtp * p[mod(i + 1)]);
+        dU[i] = UW(Wt * p[i]) - U0;
+    }
+    
+    vector<vector<<double>> jac(2 * L * dim/*, vector<double>(2 * L * dim)*/);
+    for (int i = 0; i < 2 * L * dim; i++) {
+        vector<double> jaci(2 * L * dim);
+        jac(jaci, i, fin, J, Jp, U0, U0p, dU, mu);
+        jac[i] = jaci;
+    }
+        
+        return vector<DMatrix>{DMatrix(jac), DMatrix(), DMatrix()};
+    }
+
+private:
+    vector<Sparsity> inSparsity;
+    vector<Sparsity> outSparsity;
+};
+
 boost::mutex progress_mutex;
 boost::mutex inputs_mutex;
 boost::mutex problem_mutex;
