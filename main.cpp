@@ -564,6 +564,10 @@ complex<double> dot(complex_vector& v, complex_vector& w) {
     return res;
 }
 
+string escape(string str) {
+    return replace_all_copy(str, "\"", "\\\"");
+}
+
 void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, Function& jac_func, vector<double>& p, worker_input* input, worker_output* output, managed_shared_memory& segment) {
     double tau = p[L + 3];
     //    double tauf = tau;//2e-6;
@@ -655,7 +659,7 @@ void evolve(SXFunction& E0, SXFunction& Et, Function& ode_func, Function& jac_fu
 
     ptime stop_time = microsec_clock::local_time();
     time_period period(start_time, stop_time);
-    output->runtime = to_simple_string(period.length()).c_str();
+    output->runtime = escape(to_simple_string(period.length())).c_str();
 }
 
 void fail(std::string error, worker_output* output, managed_shared_memory& segment) {
@@ -671,7 +675,7 @@ void fail(std::string error, worker_output* output, managed_shared_memory& segme
     complex_vector_vector nan_vector_vector(L, complex_vector(dim, numeric_limits<double>::quiet_NaN(), void_alloc), void_alloc);
     output->f0 = nan_vector_vector;
     output->ff = nan_vector_vector;
-    output->runtime = error.c_str();
+    output->runtime = escape(error).c_str();
 }
 
 SXFunction get_ode() {
@@ -765,28 +769,28 @@ void worker(worker_input* input, worker_tau* tau_in, worker_output* output, mana
 
     //    ExternalFunction ode_func("ode");
 
-//    chdir("odes");
-//    vector<Function> odes;
-//    odes.push_back(ExternalFunction("ode_S"));
-//    for (int ei = 0; ei < 7; ei++) {
-//        for (int i = 0; i < L; i++) {
-//            for (int n = 0; n <= nmax; n++) {
-//                string funcname = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
-//                odes.push_back(ExternalFunction(funcname));
-//            }
-//        }
-//    }
-//    SumFunction sf(odes);
-//    Function ode_func = sf.create();
-//    Function jac_func;
-//    chdir("..");
+    chdir("odes");
+    vector<Function> odes;
+    odes.push_back(ExternalFunction("ode_S"));
+    for (int ei = 0; ei < 7; ei++) {
+        for (int i = 0; i < L; i++) {
+            for (int n = 0; n <= nmax; n++) {
+                string funcname = "ode_E_" + to_string(ei) + "_" + to_string(i) + "_" + to_string(n);
+                odes.push_back(ExternalFunction(funcname));
+            }
+        }
+    }
+    SumFunction sf(odes);
+    Function ode_func = sf.create();
+    Function jac_func;
+    chdir("..");
     
 //    SXFunction ode_func = get_ode();
     
-    ODEFunction odef;
-    Function ode_func = odef.create();
-    JacFunction jacf;
-    Function jac_func = jacf.create();
+//    ODEFunction odef;
+//    Function ode_func = odef.create();
+//    JacFunction jacf;
+//    Function jac_func = jacf.create();
 
     double taui;
     for (;;) {
@@ -957,6 +961,11 @@ void build_odes() {
     gen.generate("ode_S");
 
     chdir("..");
+}
+
+template<class T>
+bool paircomp(const pair<double,T>& a, const pair<double,T>& b) {
+    return a.first < b.first;
 }
 
 /*
@@ -1155,33 +1164,72 @@ int main(int argc, char** argv) {
         vector<double> Efres;
         vector<double> Qres;
         vector<double> pres;
-        vector<vector<double>> Esres;
         vector<vector<complex<double>>> b0res;
         vector<vector<complex<double>>> bfres;
-        //        vector<complex_vector_vector> f0res;
         vector<vector < vector<complex<double>>>> ffres;
         vector<std::string> runtimeres;
 
+        vector<pair<double,double>> tauresp;
+        vector<pair<double,double>> Eiresp;
+        vector<pair<double,double>> Efresp;
+        vector<pair<double,double>> Qresp;
+        vector<pair<double,double>> presp;
+        vector<pair<double,vector<complex<double>>>> b0resp;
+        vector<pair<double,vector<complex<double>>>> bfresp;
+        vector<pair<double,vector < vector<complex<double>>>>> ffresp;
+        vector<pair<double,std::string>> runtimeresp;
+
         for (results& ires : res) {
-            taures.push_back(ires.tau);
-            Eires.push_back(ires.Ei);
-            Efres.push_back(ires.Ef);
-            Qres.push_back(ires.Q);
-            pres.push_back(ires.p);
-//            Esres.push_back(ires.Es);
-            b0res.push_back(ires.b0);
-            bfres.push_back(ires.bf);
-            runtimeres.push_back(replace_all_copy(ires.runtime, "\"", "\\\""));
-            //            vector<double> Es(ires.Es.begin(), ires.Es.end());
-            //            Esres.push_back(Es);
-            //            vector<complex<double>> b0(ires.b0.begin(), ires.b0.end());
-            //            vector<complex<double>> bf(ires.bf.begin(), ires.bf.end());
-            //            b0res.push_back(b0);
-            //            bfres.push_back(bf);
-            //            f0res.push_back(ires.f0);
-            ffres.push_back(ires.ff);
-            //            std::string runtime(ires.runtime.begin(), ires.runtime.end());
-            //            runtimeres.push_back(replace_all_copy(runtime, "\"", "\\\""));
+            tauresp.push_back(make_pair(ires.tau, ires.tau));
+            Eiresp.push_back(make_pair(ires.tau, ires.Ei));
+            Efresp.push_back(make_pair(ires.tau, ires.Ef));
+            Qresp.push_back(make_pair(ires.tau, ires.Q));
+            presp.push_back(make_pair(ires.tau, ires.p));
+            b0resp.push_back(make_pair(ires.tau, ires.b0));
+            bfresp.push_back(make_pair(ires.tau, ires.bf));
+            runtimeresp.push_back(make_pair(ires.tau, ires.runtime));
+            ffresp.push_back(make_pair(ires.tau, ires.ff));
+        }
+        
+        sort(tauresp.begin(), tauresp.end(), paircomp<double>);
+        sort(Eiresp.begin(), Eiresp.end(), paircomp<double>);
+        sort(Efresp.begin(), Efresp.end(), paircomp<double>);
+        sort(Qresp.begin(), Qresp.end(), paircomp<double>);
+        sort(presp.begin(), presp.end(), paircomp<double>);
+        sort(b0resp.begin(), b0resp.end(), paircomp<vector<complex<double>>>);
+        sort(bfresp.begin(), bfresp.end(), paircomp<vector<complex<double>>>);
+        sort(ffresp.begin(), ffresp.end(), paircomp<vector<vector<complex<double>>>>);
+        sort(runtimeresp.begin(), runtimeresp.end(), paircomp<string>);
+        
+        for (int i = 0; i < tauresp.size(); i++) {
+            taures.push_back(tauresp[i].second);
+            Eires.push_back(Eiresp[i].second);
+            Efres.push_back(Efresp[i].second);
+            Qres.push_back(Qresp[i].second);
+            pres.push_back(presp[i].second);
+            b0res.push_back(b0resp[i].second);
+            bfres.push_back(bfresp[i].second);
+            ffres.push_back(ffresp[i].second);
+            runtimeres.push_back(runtimeresp[i].second);
+//            taures.push_back(ires.tau);
+//            Eires.push_back(ires.Ei);
+//            Efres.push_back(ires.Ef);
+//            Qres.push_back(ires.Q);
+//            pres.push_back(ires.p);
+////            Esres.push_back(ires.Es);
+//            b0res.push_back(ires.b0);
+//            bfres.push_back(ires.bf);
+//            runtimeres.push_back(replace_all_copy(ires.runtime, "\"", "\\\""));
+//            //            vector<double> Es(ires.Es.begin(), ires.Es.end());
+//            //            Esres.push_back(Es);
+//            //            vector<complex<double>> b0(ires.b0.begin(), ires.b0.end());
+//            //            vector<complex<double>> bf(ires.bf.begin(), ires.bf.end());
+//            //            b0res.push_back(b0);
+//            //            bfres.push_back(bf);
+//            //            f0res.push_back(ires.f0);
+//            ffres.push_back(ires.ff);
+//            //            std::string runtime(ires.runtime.begin(), ires.runtime.end());
+//            //            runtimeres.push_back(replace_all_copy(runtime, "\"", "\\\""));
         }
 
         printMath(os, "taures", resi, taures);
@@ -1191,11 +1239,9 @@ int main(int argc, char** argv) {
         printMath(os, "pres", resi, pres);
         printMath(os, "U0res", resi, w_input->U0);
         printMath(os, "J0res", resi, w_input->J0);
-        printMath(os, "Esres", resi, Esres);
         printMath(os, "b0res", resi, b0res);
         printMath(os, "bfres", resi, bfres);
         printMath(os, "f0res", resi, w_input->f0);
-        //            printMath(os, "f0res", resi, f0res);
         printMath(os, "ffres", resi, ffres);
         printMath(os, "runtime", resi, runtimeres);
 
