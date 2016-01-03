@@ -278,7 +278,7 @@ public:
     
     vector<double> odes(2 * L * dim);
     for (int i = 0; i < 2 * L * dim; i++) {
-        odes[i] = ode(i, fin, J, Jp, U0, U0p, dU, mu);
+//        odes[i] = ode(i, fin, J, Jp, U0, U0p, dU, mu);
     }
         
         return vector<DMatrix>{DMatrix(odes), DMatrix(), DMatrix()};
@@ -353,7 +353,7 @@ public:
     vector<vector<double>> jac(2 * L * dim/*, vector<double>(2 * L * dim)*/);
     for (int i = 0; i < 2 * L * dim; i++) {
         vector<double> jaci(2 * L * dim);
-        jacobian(jaci, i, fin, J, Jp, U0, U0p, dU, mu);
+//        jacobian(jaci, i, fin, J, Jp, U0, U0p, dU, mu);
         jac[i] = jaci;
     }
         
@@ -468,6 +468,13 @@ void threadfunc(std::string prog, double tauf, queue<input>& inputs, vector<resu
     segment.destroy_ptr<worker_output>(output);
 }
 
+double energymin(const vector<double>& x, vector<double>& grad, void* data) {
+    Function& func = *(Function*)data;
+    vector<DMatrix> res = func(vector<DMatrix>{x, DMatrix()});
+    grad = res[0].nonzeros();
+    return res[1].toScalar();
+}
+
 worker_input* initialize(double Wi, double Wf, double mu, vector<double>& xi, managed_shared_memory& segment) {
 
     SX f = SX::sym("f", 2 * L * dim);
@@ -482,6 +489,7 @@ worker_input* initialize(double Wi, double Wf, double mu, vector<double>& xi, ma
     }
 
     SX E = energy(f, J, U0, dU, mu).real();
+    SX Enorm = energynorm(f, J, U0, dU, mu).real();
     
     SX g = SX::sym("g", L);
     for (int i = 0; i < L; i++) {
@@ -493,6 +501,10 @@ worker_input* initialize(double Wi, double Wf, double mu, vector<double>& xi, ma
 
     SXFunction nlp("nlp", nlpIn("x", f), nlpOut("f", E, "g", g));
     NlpSolver solver("solver", "ipopt", nlp, make_dict("hessian_approximation", "limited-memory", "linear_solver", "ma86", "print_level", 0, "print_time", false, "obj_scaling_factor", 1));
+    SXFunction nlpnorm("nlpnorm", nlpIn("x", f), nlpOut("f", Enorm));
+    NlpSolver solvernorm("solvernorm", "ipopt", nlp, make_dict("hessian_approximation", "limited-memory", "linear_solver", "ma86", "print_level", 0, "print_time", false, "obj_scaling_factor", 1));
+
+    Function grad = nlpnorm.gradient();
 
     boost::random::mt19937 rng;
     boost::random::uniform_real_distribution<> uni(-1, 1);
@@ -511,12 +523,29 @@ worker_input* initialize(double Wi, double Wf, double mu, vector<double>& xi, ma
     arg["ubg"] = 1;
 
     map<string, DMatrix> res = solver(arg);
-    vector<double> x0 = res["x"].nonzeros();
+    vector<double> x0ipopt = res["x"].nonzeros();
+    double E0ipopt = nlpnorm(vector<DMatrix>{x0ipopt, DMatrix()})[0].toScalar();//res["f"].toScalar();
     //        vector<double> x0 = xrand;
 //        cout << "xrand = " << ::math(xrand) << endl;
 //        cout << "x0 = " << ::math(x0) << endl;
     //    cout << "E0 = " << ::math(res["f"].toScalar()) << endl;
 
+    opt lopt(LD_LBFGS, 2*L*dim);
+    lopt.set_lower_bounds(-1);
+    lopt.set_upper_bounds(1);
+    lopt.set_min_objective(energymin, &grad);
+    double E0nlopt;
+    vector<double> x0nlopt = xrand;
+    lopt.optimize(x0nlopt, E0nlopt);
+
+    vector<double> x0;
+    if (E0ipopt < E0nlopt) {
+        x0 = x0ipopt;
+    }
+    else {
+        x0 = x0nlopt;
+    }
+    
     vector<complex<double>> x0i(dim);
     for (int i = 0; i < L; i++) {
         for (int n = 0; n <= nmax; n++) {
