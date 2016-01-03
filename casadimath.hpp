@@ -71,6 +71,8 @@ inline SX UW(SX W) {
 
 complex<SX> energy(SX& fin, SX& J, SX& U0, SX& dU, double mu);
 complex<SX> energy(SX& fin, SX& J, SX& U0, SX& dU, SX& mu);
+complex<SX> energynorm(SX& fin, SX& J, SX& U0, SX& dU, double mu);
+complex<SX> energynorm(SX& fin, SX& J, SX& U0, SX& dU, SX& mu);
 complex<SX> energy(int i, SX& fin, SX& J, SX& U0, SX& dU, SX& mu);
 complex<SX> energy(int i, int n, SX& fin, SX& J, SX& U0, SX& dU, SX& mu);
 complex<SX> canonical(SX& fin, SX& J, SX& U0, SX& dU, SX mu);
